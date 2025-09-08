@@ -1,42 +1,23 @@
 import socket
 
-class Server:
+class Server():
     def __init__(self):
-        self.ip = ""
-        self.port = -1
-        self.udp_socket = None
-
-    def create(self, ip, port):
-        self.close()
-        self.ip = ip
-        self.port = port
         self.udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.server_addr = ('', 0000)
+
+    def bind_address(self, ip, port):
+        self.server_addr = (ip, port)
         self.udp_socket.bind((ip, port))
-
-    def close(self):
-        if self.udp_socket:
-            self.udp_socket.close()
-        self.ip = ""
-        self.port = -1
-        self.udp_socket = None
-
-    def send(self, msg):
-        if self.udp_socket:
-            self.udp_socket.sendto(msg, (self.ip, self.port))
+        print(f"Server bound to {ip}:{port}")
 
     def receive(self, buffer_size=1024):
-        if self.udp_socket:
-            try:
-                data, addr = self.udp_socket.recvfrom(buffer_size)
-                return data
-            except:
-                return None
-        return None
-    
+        data, client_addr = self.udp_socket.recvfrom(buffer_size)
+        print(f"Received data from {client_addr}: {data.decode()}")
+        return data.decode(), client_addr
+
+
 if __name__ == "__main__":
     udp_server = Server()
-    udp_server.create("localhost", 12345)
+    udp_server.bind_address("localhost", 12345)
     while True:
-        data = udp_server.receive()
-        if data:
-            print(f"Received message: {data}")
+        udp_server.receive()
