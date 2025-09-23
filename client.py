@@ -27,6 +27,7 @@ class Client(Host):
             print("What file would you like?")
             self.filename = input()
 
+            self.flush_buffer(timeout=TIMEOUT)  # Limpa o buffer antes de iniciar nova comunicação
             self.request_file(self.filename, ip, port)  # Request de arquivo
             self.wait_response(ip, port)    # Espera resposta (será interpretada em parse_response())
 
@@ -68,8 +69,8 @@ class Client(Host):
         msg = Commands.GET_PACKET + f" {filename} {packet_index}"
         # msg = Commands.GET_PACKET + f" {filename} {self.num_packets + 1}"  # Para testes
         # msg = Commands.GET_PACKET + f" {filename}"  # Para testes
-        print(f"Press enter to send {msg} to {ip}:{port}")
-        input()
+        # print(f"Press enter to send {msg} to {ip}:{port}")
+        # input()
         self.send(ip, port, msg)
 
     def wait_response(self, ip, port):
@@ -80,28 +81,24 @@ class Client(Host):
         while not self.close_comm:
             self.udp_socket.settimeout(TIMEOUT) # Reseta timeout a cada iteração
             msg, server_addr = self.receive()
-            msg = self.packet_damage(msg, "drop")
+            # msg = self.packet_damage(msg, "drop")
             # msg = self.packet_damage(msg, "bit_flip")
 
             # Ver host.receive()
             if msg == "TIMEOUT":
-                print("ERROR: Timeout limit reached. Ending communication.")
+                print("\nERROR: Timeout limit reached. Ending communication.")
                 print("Press enter to continue.")
                 input()
                 return
             if msg == "CONN_RESET":
-                print("ERROR: Server unavailable.")
-                print("Press enter to continue.")
-                input()
-                return
+                print("ERROR: Server unavailable.\r", end="")
+                continue
             if msg == None:
                 continue
             # Server desconhecido
             if server_addr != (ip, port):
                 print(f"Received message from unknown server {server_addr}, expected {ip}:{port}. Discarding.")
-                print("Press enter to continue.")
-                input()
-                return
+                continue
             
             # Processa resposta
             self.parse_response(msg)
@@ -123,17 +120,17 @@ class Client(Host):
             # Extrai informações do pacote
             if len(msg) < 7:   # Mínimo de bytes para um pacote OK (1 code + 3 num_packets + 3 packet_index)
                 print("ERROR: Incomplete packet received. Discarding.")
-                print("Press enter to continue.")
-                input()
                 return
             self.num_packets = int.from_bytes(msg[1:4])
             packet_index = int.from_bytes(msg[4:7])
             data_chunk = msg[7:]
+            if packet_index < 0 or packet_index >= self.num_packets:
+                print("ERROR: Invalid packet index received. Discarding.")
+                return
             # Armazena o pacote recebido
             if self.receive_packet(data_chunk, packet_index, self.num_packets): # Se o arquivo está completo (pacotes esperados = pacotes recebidos)
                 print("File received successfully.")
                 self.write_file(self.filename)
-                self.close_comm = True
 
         else:   # Erro na requisição
             self.close_comm = True
@@ -167,8 +164,7 @@ class Client(Host):
         """
         Escreve o arquivo recebido no diretório client_files/.
         """
-        # Ordena os pacotes pelo índice (garante que os pacotes serão escritos na ordem correta)
-        self.file_packets = dict(sorted(self.file_packets.items()))
+        # Mesmo se os pacotes foram recebidos fora de ordem, eles são escritos na ordem correta (i = 0, 1, 2, ..., num_packets-1)
         with open(DIR + filename, "wb") as f:
             for i in range(len(self.file_packets)):
                 f.write(self.file_packets[i])
@@ -181,7 +177,7 @@ class Client(Host):
         Taxa de erro: probabilidade de ocorrer o dano (0 a 1).
         """
         import random
-        if random.random() > error_rate:
+        if random.random() > error_rate or not packet:
             return packet
         seq_num = int.from_bytes(packet[8:11]) if packet and len(packet) >= 11 else -1
         if damage_type == "drop":
@@ -194,7 +190,7 @@ class Client(Host):
                 return (int.from_bytes(packet) ^ (2**damaged_bit)).to_bytes(MAX_PACKET_SIZE)
             except UnicodeDecodeError:
                 return (int.from_bytes(packet.decode()) ^ (2**damaged_bit)).to_bytes(MAX_PACKET_SIZE)
-        return packet         
+        return packet  
         
 
 if __name__ == "__main__":

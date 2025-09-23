@@ -63,4 +63,15 @@ class Host():
         except Exception as e:
             print(f"Error sending message: {e}")
 
+    def flush_buffer(self, timeout=None):
+        """
+        Esvazia o buffer do socket UDP.
+        """
+        self.udp_socket.settimeout(0.1)  # Timeout curto para esvaziar o buffer
+        while True:
+            msg, _ = self.receive()
+            if msg == None or msg == "TIMEOUT":
+                break
+        self.udp_socket.settimeout(timeout)  # Reseta timeout  
+
     

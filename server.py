@@ -10,6 +10,7 @@ class Server(Host):
     def __init__(self, ip, port):
         super().__init__()
         self.bind_address(ip, port)
+        self.flush_buffer()  # Esvazia o buffer do socket UDP
         self.execute()
 
     def bind_address(self, ip, port):
@@ -25,6 +26,7 @@ class Server(Host):
         Loop principal do servidor, esperando por requisições de clientes.
         """
         while True:
+            print("Waiting for client requests...")
             msg, client_addr = self.receive()   # Espera por mensagens (sem timeout)
             if msg == "CONN_RESET":
                 continue
@@ -89,9 +91,14 @@ class Server(Host):
         file, _ = self.load_file(filename)  # Carrga o arquivo em bytes
 
         # Arquivo não encontrado
-        if not file:
+        if file == "NOT_FOUND":
             self.send(client_addr[0], client_addr[1], Codes.NOT_FOUND)
             print("ERROR: File not found.")
+            return
+        # Arquivo muito grande para ser carregado na memória
+        if file == "TOO_LARGE":
+            self.send(client_addr[0], client_addr[1], Codes.TOO_LARGE)
+            print("ERROR: File too large.")
             return
 
         chunks, num_chunks = self.segment_file(file)
@@ -103,7 +110,7 @@ class Server(Host):
             return
 
         # Se um pacote específico foi requisitado
-        if packet:
+        if packet is not None:
             # Índice fora do intervalo
             if packet < 0 or packet >= num_chunks:
                 self.send(client_addr[0], client_addr[1], Codes.BAD_REQUEST)
@@ -116,11 +123,12 @@ class Server(Host):
             print(f"Sent packet {packet} to {client_addr}")
 
         else:
-            # Envia todos os pacotes do arquivo
+            # Envia todos os pacotes do arquivo           
             for i, chunk in zip(range(num_chunks), chunks):
                 self.send_packet(num_chunks, i, chunk, client_addr)
                 
             print(f"Sent {num_chunks} packets to {client_addr}")
+            self.flush_buffer()
 
     def load_file(self, filename):
         """
@@ -133,7 +141,9 @@ class Server(Host):
                 file.close()
             return content, len(content)
         except FileNotFoundError:
-            return None, 0
+            return "NOT_FOUND", 0
+        except MemoryError:
+            return "TOO_LARGE", 0
 
     def segment_file(self, file_content, chunk_size=DATA_CHUNK_SIZE):
         """
